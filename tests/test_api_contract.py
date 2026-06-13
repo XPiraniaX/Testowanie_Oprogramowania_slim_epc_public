@@ -273,3 +273,151 @@ def test_reset_restores_clean_state(client, fake_traffic_manager) -> None:
     assert reset_response.json() == {"status": "reset"}
     assert client.get("/ues").json() == {"ues": []}
     assert fake_traffic_manager.stop_all_called is True
+
+
+# Borderline / edge cases
+def test_openapi_and_docs_endpoints_are_served(client) -> None:
+    assert client.get("/openapi.json").status_code == 200
+    assert client.get("/docs").status_code == 200
+    assert client.get("/redoc").status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("put", "/ues"),
+        ("delete", "/ues"),
+        ("patch", "/ues/1"),
+        ("put", "/reset"),
+    ],
+)
+def test_unsupported_methods_return_405(client, method: str, path: str) -> None:
+    response = getattr(client, method)(path)
+
+    assert response.status_code == 405
+
+
+def test_unknown_route_returns_404(client) -> None:
+    assert client.get("/does-not-exist").status_code == 404
+
+
+@pytest.mark.parametrize("ue_path", ["/ues/abc", "/ues/1.5", "/ues/true"])
+def test_non_integer_ue_path_param_returns_422(client, ue_path: str) -> None:
+    assert client.get(ue_path).status_code == 422
+
+
+@pytest.mark.parametrize("ue_id", [0, -5, 99999])
+def test_out_of_range_ue_path_param_is_not_validated_and_maps_to_400(client, ue_id: int) -> None:
+    # Path parameters are plain ``int`` (no Field range), so out-of-range ids are
+    # NOT rejected with 422 the way request bodies are; they reach the repo and
+    # come back as a domain 400 ("UE not found").
+    response = client.get(f"/ues/{ue_id}")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "UE not found"
+
+
+@pytest.mark.parametrize("bearer_path", ["/ues/1/bearers/abc/traffic", "/ues/1/bearers/x"])
+def test_non_integer_bearer_path_param_returns_422(client, bearer_path: str) -> None:
+    client.post("/ues", json={"ue_id": 1})
+
+    # GET for stats path, DELETE for the plain bearer path.
+    response = client.get(bearer_path) if bearer_path.endswith("traffic") else client.delete(bearer_path)
+
+    assert response.status_code == 422
+
+
+def test_malformed_json_body_returns_422(client) -> None:
+    response = client.post(
+        "/ues",
+        content="{not valid json",
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_attach_ue_with_missing_body_field_returns_422(client) -> None:
+    assert client.post("/ues", json={}).status_code == 422
+
+
+def test_zero_throughput_is_rejected_by_traffic_manager_with_400(client) -> None:
+    # The model accepts bps=0, but the traffic manager treats a falsy target_bps
+    # as "not configured" -> 400 at the API boundary.
+    client.post("/ues", json={"ue_id": 1})
+
+    response = client.post("/ues/1/bearers/9/traffic", json={"protocol": "tcp", "bps": 0})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Bearer not configured for traffic"
+
+
+def test_negative_throughput_is_accepted_at_http_layer(client, fake_traffic_manager) -> None:
+    # A negative target_bps is truthy, so it passes the manager's guard and the
+    # request succeeds (documents the lack of a lower-bound check).
+    client.post("/ues", json={"ue_id": 1})
+
+    response = client.post("/ues/1/bearers/9/traffic", json={"protocol": "udp", "bps": -1000})
+
+    assert response.status_code == 200
+    assert response.json()["target_bps"] == -1000
+    assert (1, 9, -1000, "udp") in fake_traffic_manager.started
+
+
+def test_starting_traffic_twice_on_same_bearer_returns_400(client) -> None:
+    client.post("/ues", json={"ue_id": 1})
+
+    first = client.post("/ues/1/bearers/9/traffic", json={"protocol": "tcp", "Mbps": 1})
+    assert first.status_code == 200
+
+    second = client.post("/ues/1/bearers/9/traffic", json={"protocol": "tcp", "Mbps": 1})
+    assert second.status_code == 400
+    assert second.json()["detail"] == "Traffic already running"
+
+
+def test_aggregated_stats_across_multiple_ues_with_details(client, repo) -> None:
+    from epc.models import ThroughputStats
+
+    for ue_id in (1, 2):
+        client.post("/ues", json={"ue_id": ue_id})
+        repo.update_stats(
+            ue_id,
+            ThroughputStats(
+                ue_id=ue_id,
+                bearer_id=9,
+                bytes_tx=1250,
+                bytes_rx=2500,
+                start_ts=100.0,
+                last_update_ts=110.0,
+                protocol="tcp",
+                target_bps=1000,
+            ),
+        )
+
+    response = client.get("/ues/stats?include_details=true")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["scope"] == "all"
+    assert body["ue_count"] == 2
+    assert body["bearer_count"] == 2
+    # each bearer: 1250 * 8 / 10 = 1000 tx -> total 2000
+    assert body["total_tx_bps"] == 2000
+    assert body["total_rx_bps"] == 4000
+    assert body["details"] == {"1": {"9": 1000}, "2": {"9": 1000}}
+
+
+def test_detaching_ue_removes_it_from_aggregated_stats(client) -> None:
+    client.post("/ues", json={"ue_id": 3})
+    client.delete("/ues/3")
+
+    response = client.get("/ues/stats")
+
+    assert response.status_code == 200
+    assert response.json()["ue_count"] == 0
+
+
+def test_reset_on_empty_state_is_idempotent(client) -> None:
+    assert client.post("/reset").status_code == 200
+    assert client.post("/reset").status_code == 200
+    assert client.get("/ues").json() == {"ues": []}
