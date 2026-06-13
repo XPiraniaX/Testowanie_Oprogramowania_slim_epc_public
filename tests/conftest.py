@@ -11,9 +11,9 @@ if str(PROJECT_ROOT) not in sys.path:
 import pytest
 from fastapi.testclient import TestClient
 
-import epc.api as api_module
-from epc.api import get_repo
-from epc.db import EPCRepository
+import epc_poprawione.api as api_module
+from epc_poprawione.api import get_repo
+from epc_poprawione.db import EPCRepository
 from main import app
 
 

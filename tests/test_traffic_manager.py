@@ -14,10 +14,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import epc.traffic as traffic
-from epc.db import EPCRepository
-from epc.models import BearerConfig
-from epc.traffic import TrafficGeneratorManager, get_traffic_manager
+import epc_poprawione.traffic as traffic
+from epc_poprawione.db import EPCRepository
+from epc_poprawione.models import BearerConfig
+from epc_poprawione.traffic import TrafficGeneratorManager, get_traffic_manager
 
 
 @pytest.fixture

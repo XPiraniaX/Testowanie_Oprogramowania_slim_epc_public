@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 
-from epc.api import router
-from epc.db import EPCRepository
-from epc.traffic import get_traffic_manager
+from epc_poprawione.api import router
+from epc_poprawione.db import EPCRepository
+from epc_poprawione.traffic import get_traffic_manager
 
 app = FastAPI(
     title="Simple EPC Simulator",

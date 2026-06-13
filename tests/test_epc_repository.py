@@ -2,8 +2,8 @@
 
 import pytest
 
-from epc.db import EPCRepository
-from epc.models import BearerConfig, ThroughputStats
+from epc_poprawione.db import EPCRepository
+from epc_poprawione.models import BearerConfig, ThroughputStats
 
 
 @pytest.fixture
@@ -178,7 +178,7 @@ import sqlite3  # noqa: E402
 
 from pydantic import ValidationError  # noqa: E402
 
-from epc.models import UEState  # noqa: E402
+from epc_poprawione.models import UEState  # noqa: E402
 
 
 def test_ue_exists_and_list_ues_on_empty_db(repo):

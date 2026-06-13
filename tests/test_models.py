@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from epc.models import (
+from epc_poprawione.models import (
     AddBearerRequest,
     AttachUERequest,
     BearerConfig,
