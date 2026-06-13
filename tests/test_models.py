@@ -1,4 +1,4 @@
-#Przygotował Kamil Gębala
+# Przygotował Kamil Gębala
 from __future__ import annotations
 
 import pytest
@@ -7,25 +7,39 @@ from pydantic import ValidationError
 from epc.models import AddBearerRequest, AttachUERequest, StartTrafficRequest, UEState
 
 
+# ue
+
+
 @pytest.mark.parametrize("ue_id", [1, 100])
 def test_attach_ue_request_accepts_boundary_ids(ue_id: int) -> None:
-    assert AttachUERequest(ue_id=ue_id).ue_id == ue_id
+    request = AttachUERequest(ue_id=ue_id)
+
+    assert request.ue_id == ue_id
 
 
 @pytest.mark.parametrize("ue_id", [0, 101, 1020, -1])
-def test_attach_ue_api_rejects_out_of_range_ids(client, ue_id: int) -> None:
-    response = client.post("/ues", json={"ue_id": ue_id})
-    assert response.status_code == 422
+def test_attach_ue_request_rejects_out_of_range_ids(ue_id: int) -> None:
+    with pytest.raises(ValidationError):
+        AttachUERequest(ue_id=ue_id)
+
+
+# bearer
+
 
 @pytest.mark.parametrize("bearer_id", [1, 9])
 def test_add_bearer_request_accepts_boundary_ids(bearer_id: int) -> None:
-    assert AddBearerRequest(bearer_id=bearer_id).bearer_id == bearer_id
+    request = AddBearerRequest(bearer_id=bearer_id)
+
+    assert request.bearer_id == bearer_id
 
 
 @pytest.mark.parametrize("bearer_id", [0, 10, -1])
 def test_add_bearer_request_rejects_out_of_range_ids(bearer_id: int) -> None:
     with pytest.raises(ValidationError):
         AddBearerRequest(bearer_id=bearer_id)
+
+
+# traffic-
 
 
 @pytest.mark.parametrize(
@@ -48,6 +62,11 @@ def test_start_traffic_request_rejects_invalid_protocol(protocol: str) -> None:
         StartTrafficRequest(protocol=protocol, Mbps=1)
 
 
+def test_start_traffic_request_requires_protocol() -> None:
+    with pytest.raises(ValidationError):
+        StartTrafficRequest(Mbps=1)
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -59,6 +78,9 @@ def test_start_traffic_request_rejects_invalid_protocol(protocol: str) -> None:
 def test_start_traffic_request_requires_exactly_one_throughput_unit(payload: dict) -> None:
     with pytest.raises(ValidationError):
         StartTrafficRequest(**payload)
+
+
+# ue state
 
 
 def test_ue_state_initializes_empty_defaults() -> None:
