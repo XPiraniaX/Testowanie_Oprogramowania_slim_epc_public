@@ -413,3 +413,118 @@ def test_reset_all_stops_traffic_and_clears_state(repo, tm):
     tm.stop_all.assert_called_once()
     repo.reset_all.assert_called_once()
     assert resp.status == "reset"
+
+
+# --------------------------------------------------------------------------- #
+# Edge / boundary cases
+# --------------------------------------------------------------------------- #
+
+class _FixedClock:
+    """Deterministic replacement for the ``time`` module used in ``epc.api``."""
+
+    @staticmethod
+    def time() -> float:
+        return 1_010.0
+
+
+@pytest.mark.usefixtures("tm")
+def test_start_traffic_kbps_conversion(repo):
+    repo.get_ue.return_value = UEState(ue_id=1, bearers={1: BearerConfig(bearer_id=1)})
+
+    resp = start_traffic(1, 1, StartTrafficRequest(protocol="udp", kbps=500), repo)
+
+    assert resp.target_bps == 500_000
+
+
+@pytest.mark.usefixtures("tm")
+def test_start_traffic_bps_conversion(repo):
+    repo.get_ue.return_value = UEState(ue_id=1, bearers={1: BearerConfig(bearer_id=1)})
+
+    resp = start_traffic(1, 1, StartTrafficRequest(protocol="tcp", bps=1000), repo)
+
+    assert resp.target_bps == 1000
+
+
+@pytest.mark.usefixtures("tm")
+def test_start_traffic_fractional_mbps_truncates(repo):
+    repo.get_ue.return_value = UEState(ue_id=1, bearers={1: BearerConfig(bearer_id=1)})
+
+    
+    resp = start_traffic(1, 1, StartTrafficRequest(protocol="tcp", Mbps=1.5), repo)
+
+    assert resp.target_bps == 1_500_000
+
+
+@pytest.mark.usefixtures("tm")
+def test_get_traffic_stats_zero_duration_no_division_error(repo):
+    
+    stats = ThroughputStats(
+        bearer_id=1,
+        ue_id=1,
+        bytes_tx=999,
+        bytes_rx=999,
+        start_ts=1_000.0,
+        last_update_ts=1_000.0,
+    )
+    repo.get_ue.return_value = UEState(
+        ue_id=1, bearers={1: BearerConfig(bearer_id=1)}, stats={1: stats}
+    )
+
+    resp = get_traffic_stats(1, 1, repo)
+
+    assert resp.duration == 0
+    assert resp.tx_bps == 0
+    assert resp.rx_bps == 0
+
+
+def test_get_traffic_stats_while_running_uses_current_time(repo, tm, monkeypatch):
+    monkeypatch.setattr(api, "time", _FixedClock)
+    tm.is_running.return_value = True
+    
+    stats = ThroughputStats(
+        bearer_id=1,
+        ue_id=1,
+        bytes_tx=125_000,
+        bytes_rx=125_000,
+        start_ts=1_000.0,
+        last_update_ts=1_001.0,
+    )
+    repo.get_ue.return_value = UEState(
+        ue_id=1, bearers={1: BearerConfig(bearer_id=1)}, stats={1: stats}
+    )
+
+    resp = get_traffic_stats(1, 1, repo)
+
+    assert resp.duration == 10
+    assert resp.tx_bps == 100_000
+
+
+@pytest.mark.usefixtures("tm")
+def test_get_ues_stats_single_ue_exists_but_fetch_raises_maps_to_400(repo):
+    
+    repo.ue_exists.return_value = True
+    repo.get_ue.side_effect = ValueError("UE not found")
+
+    with pytest.raises(HTTPException) as exc:
+        get_ues_stats(repo, ue_id=1)
+
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.usefixtures("tm")
+def test_get_ues_stats_all_skips_ue_that_disappears(repo):
+   
+    repo.list_ues.return_value = [1, 2]
+
+    def fake_get_ue(uid):
+        if uid == 1:
+            raise ValueError("UE not found")
+        return UEState(ue_id=2, stats={1: _stats(125_000)})
+
+    repo.get_ue.side_effect = fake_get_ue
+
+    resp = get_ues_stats(repo)
+
+    assert resp.ue_count == 2  
+    assert resp.bearer_count == 1  
+    assert resp.total_tx_bps == 100_000
