@@ -220,7 +220,7 @@ def test_ues_stats_route_is_not_captured_by_ue_id_route(client) -> None:
 
 
 def test_ues_stats_with_filter_and_details_shape(client, repo) -> None:
-    from epc_poprawione.models import ThroughputStats
+    from epc.models import ThroughputStats
 
     client.post("/ues", json={"ue_id": 2})
     repo.update_stats(
@@ -376,7 +376,7 @@ def test_starting_traffic_twice_on_same_bearer_returns_400(client) -> None:
 
 
 def test_aggregated_stats_across_multiple_ues_with_details(client, repo) -> None:
-    from epc_poprawione.models import ThroughputStats
+    from epc.models import ThroughputStats
 
     for ue_id in (1, 2):
         client.post("/ues", json={"ue_id": ue_id})

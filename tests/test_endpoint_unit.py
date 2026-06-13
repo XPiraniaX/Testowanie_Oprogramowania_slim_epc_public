@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import HTTPException
 
-from epc_poprawione import api
-from epc_poprawione.api import (
+from epc import api
+from epc.api import (
     add_bearer,
     attach_ue,
     delete_bearer,
@@ -18,7 +18,7 @@ from epc_poprawione.api import (
     start_traffic,
     stop_traffic,
 )
-from epc_poprawione.models import (
+from epc.models import (
     AddBearerRequest,
     AttachUERequest,
     BearerConfig,
